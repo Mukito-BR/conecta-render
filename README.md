@@ -26,9 +26,9 @@ Copy-Item .env.example .env
 npm run dev
 ```
 
-Abra <http://localhost:5173>, permita o microfone, escolha seu nome e entre. Na barra inferior ficam **Mutar mic**, **Ativar câmera**, **Transmitir tela** e **Desconectar**. O popup de captura da tela pode oferecer também o áudio do sistema, dependendo do navegador e do sistema operacional.
+Abra <endereço>, permita o microfone, escolha seu nome e entre. Na barra inferior ficam **Mutar mic**, **Ativar câmera**, **Transmitir tela** e **Desconectar**. O popup de captura da tela pode oferecer também o áudio do sistema, dependendo do navegador e do sistema operacional.
 
-Se o navegador já tiver bloqueado o microfone, abra as permissões do site `http://localhost:5173` no cadeado ao lado do endereço, marque **Microfone: Permitir**, recarregue a página e tente entrar novamente. Autorize a câmera quando ativá-la.
+Se o navegador já tiver bloqueado o microfone, abra as permissões do site `endereço` no cadeado ao lado do endereço, marque **Microfone: Permitir**, recarregue a página e tente entrar novamente. Autorize a câmera quando ativá-la.
 
 ## Deploy no Render
 
@@ -58,6 +58,6 @@ O endereço `localhost` só existe no seu computador; o link de convite local n�
 
 - Servidor: `server/.env.example` (`PORT`, `CLIENT_ORIGIN`).
 - Cliente: `client/.env.example` (`VITE_SIGNAL_URL` e variáveis TURN comentadas). Em produção, o Socket.io usa por padrão o mesmo domínio da página.
-- Saúde do servidor: <http://localhost:3001/health>.
+- Saúde do servidor: <http://endereço/health>.
 
 O WebRTC tenta STUN público por padrão. Algumas redes e operadoras usam NAT/CGNAT que bloqueia conexões diretas; nesse caso, configure um servidor TURN para voz, câmera e tela passarem por relay. STUN sem TURN não garante conexão em toda rede. As credenciais TURN do cliente ficam visíveis no bundle; gere credenciais temporárias e limitadas no provedor.
