@@ -1,0 +1,11 @@
+.camera-badge{position:absolute;top:14px;left:14px;display:flex;align-items:center;gap:6px;border-radius:4px;background:#232428dd;padding:6px 8px;color:#eef0f2;font-size:9px;font-weight:800;letter-spacing:.06em;backdrop-filter:blur(8px)}
+.camera-card video{object-fit:cover}
+.camera-card{max-width:980px;justify-self:center}
+.control-dock{gap:8px}
+.controls{gap:5px}
+.control{min-width:78px}
+@media(max-width:620px){.control-dock{gap:0;padding-inline:4px}.controls{gap:0}.control{min-width:75px}.screen-grid.count-2,.screen-grid.count-3{grid-template-columns:1fr}}
+.join-form .private-toggle{display:flex;align-items:flex-start;gap:10px;letter-spacing:normal;font-size:12px;font-weight:500;cursor:pointer;padding:10px 11px;border:1px solid #45474e;border-radius:6px;background:#2b2d31;color:#d7d9dd}
+.join-form .private-toggle input{width:16px;height:16px;flex:none;margin:1px 0 0;accent-color:#5865f2}
+.private-toggle span{display:grid;gap:4px}
+.private-toggle small{color:#92969e;font-size:10px;font-weight:400;line-height:1.4}
