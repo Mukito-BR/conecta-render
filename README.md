@@ -1,3 +1,6 @@
+<img width="1914" height="942" alt="image" src="https://github.com/user-attachments/assets/f7b7a301-7391-4077-ace7-0f2c0a01421e" />
+
+
 # Conecta: voz, vídeo e chat
 
 Aplicação React/Vite com servidor Express e Socket.io para sinalização WebRTC. Áudio, câmera e tela são transmitidos diretamente entre navegadores; a malha P2P é indicada para grupos pequenos.
@@ -28,7 +31,7 @@ Terminal 2:
 npm run dev:client
 ```
 
-O servidor deve mostrar a porta configurada (padrão 3001). Em desenvolvimento, a porta do servidor fica reservada para API e Socket.io; a interface só é servida pelo Vite na porta configurada (padrão 5173), que falha claramente se estiver ocupada, em vez de abrir outra interface em 5174. Abra <http://localhost:5173> e confira `/health` na porta configurada do servidor. Permita o acesso ao microfone; se negar, ainda será possível entrar na sala e tentar ativá-lo pelo botão **Ativar mic**. A câmera pede permissão ao ser ativada.
+O servidor deve mostrar a porta configurada (padrão <port>). Em desenvolvimento, a porta do servidor fica reservada para API e Socket.io; a interface só é servida pelo Vite na porta configurada (padrão <PORT>), que falha claramente se estiver ocupada, em vez de abrir outra interface em <PORT>. Abra <http://localhost:<PORT>> e confira `/health` na porta configurada do servidor. Permita o acesso ao microfone; se negar, ainda será possível entrar na sala e tentar ativá-lo pelo botão **Ativar mic**. A câmera pede permissão ao ser ativada.
 
 Se aparecer `EADDRINUSE`, já existe um processo usando a porta configurada. Feche os terminais antigos do Conecta e inicie apenas um servidor e um cliente. Para alterar portas, edite o mesmo `.env` e reinicie ambos.
 
