@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 
-export type Participant = { id: string; name: string; micMuted: boolean; sharing: boolean; camera: boolean; screenStreamId?: string; cameraStreamId?: string };
+export type Participant = { id: string; name: string; avatarUrl: string; micMuted: boolean; sharing: boolean; camera: boolean; screenStreamId?: string; cameraStreamId?: string };
+export type ChatMessage = { id: string; senderId: string; name: string; avatarUrl: string; text: string; createdAt: number };
 type Signal = { from: string; data: RTCSessionDescriptionInit | RTCIceCandidateInit };
 const SIGNAL_URL = import.meta.env.VITE_SIGNAL_URL || (import.meta.env.DEV ? `${location.protocol}//${location.hostname}:3001` : location.origin);
+export function getBrowserClientId() {
+  const key = 'conecta:participant-id';
+  let id = localStorage.getItem(key);
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem(key, id); }
+  return id;
+}
 const rtcConfig: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -26,6 +33,9 @@ export function useWebRTC() {
   const [speaking, setSpeaking] = useState(false);
   const [connected, setConnected] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [microphoneAvailable, setMicrophoneAvailable] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [selfId, setSelfId] = useState('');
   const [error, setError] = useState('');
 
   const upsert = useCallback((person: Participant) => setParticipants((list) => list.some((p) => p.id === person.id) ? list.map((p) => p.id === person.id ? { ...p, ...person } : p) : [...list, person]), []);
@@ -35,6 +45,41 @@ export function useWebRTC() {
     setMedia((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${id}:`))));
     setParticipants((list) => list.filter((p) => p.id !== id));
   }, []);
+
+  const startMeter = useCallback((stream: MediaStream) => {
+    try {
+      const context = new AudioContext(); const analyser = context.createAnalyser(); analyser.fftSize = 512;
+      context.createMediaStreamSource(stream).connect(analyser); const values = new Uint8Array(analyser.frequencyBinCount);
+      const sample = () => { analyser.getByteFrequencyData(values); const avg = values.reduce((a, b) => a + b, 0) / values.length; setSpeaking(avg > 22); analyserRef.current = requestAnimationFrame(sample); };
+      sample();
+    } catch { /* Medidor visual é opcional. */ }
+  }, []);
+
+  const requestMicrophone = useCallback(async () => {
+    try {
+      const audio = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+      localStream.current = audio;
+      audio.getAudioTracks().forEach((track) => {
+        track.onended = () => {
+          if (localStream.current !== audio || audio.getAudioTracks().some((item) => item.readyState === 'live')) return;
+          setMicrophoneAvailable(false);
+          socketRef.current?.emit('member-state', { micMuted: true });
+        };
+      });
+      peers.current.forEach((pc) => audio.getTracks().forEach((track) => pc.addTrack(track, audio)));
+      setMicrophoneAvailable(true);
+      setError('');
+      socketRef.current?.emit('member-state', { micMuted: false, clientId: getBrowserClientId() });
+      startMeter(audio);
+      return true;
+    } catch (e) {
+      const err = e as DOMException;
+      setMicrophoneAvailable(false);
+      setError(err.name === 'NotAllowedError' ? 'Microfone bloqueado. Você entrou na sala; permita o microfone e toque em Ativar mic para tentar novamente.' : err.name === 'NotFoundError' ? 'Você entrou na sala, mas nenhum microfone foi encontrado.' : 'Você entrou na sala, mas não foi possível abrir o microfone. Verifique se outro app está usando o dispositivo.');
+      socketRef.current?.emit('member-state', { micMuted: true, clientId: getBrowserClientId() });
+      return false;
+    }
+  }, [startMeter]);
 
   const makePeer = useCallback((id: string) => {
     const existing = peers.current.get(id); if (existing) return existing;
@@ -66,15 +111,18 @@ export function useWebRTC() {
     return pc;
   }, [removePeer]);
 
-  const connect = useCallback(async (roomId: string, name: string, password = '') => {
+  const connect = useCallback(async (roomId: string, name: string, password = '', avatarUrl = '') => {
     setError('');
     try {
-      const audio = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
-      localStream.current = audio;
       const socket = io(SIGNAL_URL); socketRef.current = socket;
       socket.on('user-joined', (person: Participant) => { upsert(person); makePeer(person.id); });
       socket.on('member-updated', upsert);
       socket.on('user-disconnected', ({ id }: { id: string }) => removePeer(id));
+      socket.on('chat-message', (message: ChatMessage) => setMessages((current) => [...current.slice(-99), message]));
+      socket.on('chat-error', ({ error: message }: { error: string }) => setError(message));
+      socket.on('room-deleted', () => { setError('Esta sala foi apagada pelo criador.'); setConnected(false); });
+      socket.on('session-replaced', () => { setError('Este perfil foi conectado em outro dispositivo. Para manter uma única presença, esta sessão foi desconectada.'); setConnected(false); });
+      socket.on('disconnect', () => setConnected(false));
       socket.on('signal', async ({ from, data }: Signal) => {
         try {
           const pc = makePeer(from);
@@ -102,35 +150,32 @@ export function useWebRTC() {
         }, 12000);
         socket.once('connect', () => {
           setConnected(true);
-          socket.emit('join-room', { roomId, name, password }, (result: { error?: string; participants?: Participant[] }) => {
+          socket.emit('join-room', { roomId, name, password, avatarUrl, clientId: getBrowserClientId() }, (result: { error?: string; self?: Participant; participants?: Participant[]; messages?: ChatMessage[] }) => {
             window.clearTimeout(timeout);
             if (result.error) { setError(result.error); socket.disconnect(); setConnected(false); resolve(false); return; }
-            setParticipants(result.participants ?? []); resolve(true);
+            setSelfId(result.self?.id ?? socket.id ?? ''); setParticipants(result.participants ?? []); setMessages(result.messages ?? []); resolve(true);
           });
         });
-        socket.once('connect_error', () => {
-          window.clearTimeout(timeout); setError(`Não conectou ao servidor da sala (${SIGNAL_URL}).`);
+        socket.once('connect_error', (connectionError) => {
+          window.clearTimeout(timeout); setError(`Não conectou ao servidor da sala (${SIGNAL_URL}): ${connectionError.message}.`);
           socket.disconnect(); setConnected(false); resolve(false);
         });
       });
-      if (!joinedRoom) { audio.getTracks().forEach((track) => track.stop()); localStream.current = null; socketRef.current = null; return false; }
-      startMeter(audio);
+      if (!joinedRoom) { socketRef.current = null; return false; }
+      void requestMicrophone();
       return true;
     } catch (e) {
-      const err = e as DOMException;
-      setError(err.name === 'NotAllowedError' ? 'Microfone bloqueado. Permita o acesso nas configurações do navegador e tente novamente.' : err.name === 'NotFoundError' ? 'Nenhum microfone foi encontrado neste computador.' : 'Não foi possível abrir o microfone. Verifique se outro app está usando o dispositivo.');
+      setError(e instanceof Error ? `Não foi possível conectar à sala: ${e.message}` : 'Não foi possível conectar à sala.');
       return false;
     }
-  }, [makePeer, removePeer, upsert]);
+  }, [makePeer, removePeer, requestMicrophone, upsert]);
 
-  const startMeter = (stream: MediaStream) => {
-    try {
-      const context = new AudioContext(); const analyser = context.createAnalyser(); analyser.fftSize = 512;
-      context.createMediaStreamSource(stream).connect(analyser); const values = new Uint8Array(analyser.frequencyBinCount);
-      const sample = () => { analyser.getByteFrequencyData(values); const avg = values.reduce((a, b) => a + b, 0) / values.length; setSpeaking(avg > 22); analyserRef.current = requestAnimationFrame(sample); };
-      sample();
-    } catch { /* Medidor visual é opcional. */ }
-  };
+  const sendMessage = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (trimmed && trimmed.length <= 2000 && socketRef.current?.connected) socketRef.current.emit('chat-message', { text: trimmed });
+  }, []);
+
+  const updateAvatar = useCallback((avatarUrl: string) => { socketRef.current?.emit('member-state', { avatarUrl }); }, []);
 
   const toggleMic = useCallback(() => {
     const track = localStream.current?.getAudioTracks()[0]; if (!track) return false;
@@ -177,9 +222,9 @@ export function useWebRTC() {
     [localStream.current, screenStream.current, cameraStream.current].forEach((stream) => stream?.getTracks().forEach((track) => track.stop()));
     localStream.current = null; screenStream.current = null; cameraStream.current = null; endScreenRef.current = null;
     socketRef.current?.disconnect(); socketRef.current = null;
-    setParticipants([]); setMedia({}); setConnected(false); setSpeaking(false); setCameraEnabled(false);
+    setParticipants([]); setMedia({}); setMessages([]); setSelfId(''); setConnected(false); setSpeaking(false); setCameraEnabled(false); setMicrophoneAvailable(false);
   }, []);
 
   useEffect(() => () => { socketRef.current?.disconnect(); peers.current.forEach((pc) => pc.close()); [localStream.current, screenStream.current, cameraStream.current].forEach((stream) => stream?.getTracks().forEach((track) => track.stop())); if (analyserRef.current !== null) cancelAnimationFrame(analyserRef.current); }, []);
-  return { participants, media, speaking, connected, cameraEnabled, error, setError, connect, toggleMic, toggleCamera, shareScreen, stopScreen, disconnect };
+  return { participants, media, messages, selfId, speaking, connected, cameraEnabled, microphoneAvailable, error, setError, connect, sendMessage, updateAvatar, toggleMic, requestMicrophone, toggleCamera, shareScreen, stopScreen, disconnect };
 }
